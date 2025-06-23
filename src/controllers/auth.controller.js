@@ -47,8 +47,6 @@ export const signup = async (req, res) => {
     res.cookie("token", token, {
       maxAge: 3 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
     });
 
     res.status(201).json({
@@ -85,8 +83,6 @@ export const login = async (req, res) => {
     res.cookie("token", token, {
       maxAge: 3 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
     });
 
     res
@@ -209,7 +205,6 @@ export const updateProfile = async (req, res) => {
       });
     } catch (streamError) {
       console.error("Stream update error:", streamError);
-      // Don't return error here as the main update was successful
     }
 
     res.status(200).json({
