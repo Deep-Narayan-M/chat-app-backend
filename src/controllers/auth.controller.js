@@ -2,9 +2,10 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import { upsertStreamUser } from "../lib/stream.js";
+import cloudinary from "../lib/cloudinary.js";
 
 export const signup = async (req, res) => {
-  const { username, email, password, gender } = req.body;
+  const { username, email, password } = req.body;
   try {
     if (!username || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -22,15 +23,11 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    const idx = Math.floor(Math.random() * 99) + 1;
-    const randomAvatar = `https://randomuser.me/api/portraits/${gender}/${idx}.jpg`;
-
     const newUser = await User.create({
       username,
       email,
       password,
-      gender,
-      profilePic: randomAvatar,
+      profilePic: "",
     });
 
     try {
@@ -39,7 +36,6 @@ export const signup = async (req, res) => {
         name: newUser.username,
         image: newUser.profilePic || "",
       });
-      console.log(`Stream user upserted for user ${newUser.username}`);
     } catch (error) {
       console.error("Error upserting stream user", error);
     }
@@ -109,15 +105,14 @@ export const logout = async (req, res) => {
 export const onboarding = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { username, gender, bio, location } = req.body;
+    const { username, bio, location } = req.body;
 
-    if (!username || !gender || !bio || !location) {
+    if (!username || !bio || !location) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
         missingFields: [
           !username && "username",
-          !gender && "gender",
           !bio && "bio",
           !location && "location",
         ].filter(Boolean),
@@ -146,7 +141,6 @@ export const onboarding = async (req, res) => {
         name: updatedUser.username,
         image: updatedUser.profilePic || "",
       });
-      console.log(`Stream user upserted for user ${updatedUser.username}`);
     } catch (error) {
       console.error("Error upserting stream user", error);
     }
@@ -158,5 +152,76 @@ export const onboarding = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const updateData = { ...req.body };
+    let updatedUser;
+
+    // If profile pic is being updated
+    if (updateData.profilePic) {
+      try {
+        const uploadResponse = await cloudinary.uploader.upload(
+          updateData.profilePic,
+          {
+            folder: "xenochat",
+          }
+        );
+        updateData.profilePic = uploadResponse.secure_url;
+      } catch (error) {
+        console.error("Cloudinary upload error:", error);
+        return res
+          .status(500)
+          .json({ message: "Failed to upload profile picture" });
+      }
+    }
+
+    // Update user in database
+    try {
+      updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+        new: true,
+      }).select("-password");
+
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+    } catch (dbError) {
+      console.error("Database update error:", dbError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update user in database",
+        error: dbError.message,
+      });
+    }
+
+    // Update Stream user
+    try {
+      await upsertStreamUser({
+        id: updatedUser._id.toString(),
+        name: updatedUser.username,
+        image: updatedUser.profilePic || "",
+      });
+    } catch (streamError) {
+      console.error("Stream update error:", streamError);
+      // Don't return error here as the main update was successful
+    }
+
+    res.status(200).json({
+      success: true,
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Error in update profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };

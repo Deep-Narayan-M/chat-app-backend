@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema(
 );
 
 // pre hook - using regular function to maintain 'this' context
-userSchema.pre("save", async function(next) {
+userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   try {
     const salt = await bcrypt.genSalt(10);
